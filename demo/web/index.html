@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Тернарные модели на процессоре</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1d1c1a; --muted: #6b675f; --line: #e3dfd6; --soft: #f2efe8;
+    --ours: #0f6b5c; --ours-soft: #e3f1ed; --warn: #9a5b00; --code: #f4f1ea;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161614; --fg: #ebe8e1; --muted: #a29d93; --line: #34322e; --soft: #1f1e1b;
+            --ours: #5cc4ae; --ours-soft: #183029; --warn: #e0a54a; --code: #22211e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.55 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); margin: 0 0 24px; max-width: 760px; }
+  nav.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 24px; }
+  nav.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px;
+                    font: inherit; color: var(--muted); cursor: pointer; margin-bottom: -1px; }
+  nav.tabs button[aria-selected="true"] { color: var(--fg); border-color: var(--fg); font-weight: 600; }
+  button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-visible
+    { outline: 2px solid var(--ours); outline-offset: 2px; }
+
+  .models { width: 100%; border-collapse: collapse; margin-bottom: 28px; font-size: 14px; }
+  .models th, .models td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .models th { color: var(--muted); font-weight: 500; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 7px; border-radius: 4px;
+         background: var(--ours-soft); color: var(--ours); margin-left: 6px; font-weight: 600; }
+
+  .layout { display: grid; grid-template-columns: 250px 1fr; gap: 28px; }
+  .tasklist { position: sticky; top: 16px; align-self: start; }
+  .tasklist h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+                 margin: 16px 0 6px; }
+  .tasklist h3:first-child { margin-top: 0; }
+  .tasklist button { display: block; width: 100%; text-align: left; background: none; border: 0; font: inherit;
+                     font-size: 15px; padding: 6px 10px; border-radius: 6px; color: var(--fg); cursor: pointer; }
+  .tasklist button:hover { background: var(--soft); }
+  .tasklist button[aria-current="true"] { background: var(--soft); font-weight: 600; }
+
+  .task h2 { font-size: 22px; margin: 0 0 4px; }
+  .instr { margin: 0 0 12px; }
+  details.source { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin-bottom: 22px; }
+  details.source summary { cursor: pointer; color: var(--muted); }
+  details.source pre { white-space: pre-wrap; font: 14px/1.55 inherit; font-family: inherit; max-height: 360px;
+                       overflow: auto; margin: 10px 0 0; }
+  .answers { display: grid; gap: 0; border-top: 1px solid var(--line); }
+  .ans { display: grid; grid-template-columns: 210px 1fr; gap: 20px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+  .ans .who { font-weight: 600; }
+  .ans .who small { display: block; font-weight: 400; color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .ans.ours .who { color: var(--ours); }
+  .ans .stats { font-size: 13px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+  .ans .text { white-space: pre-wrap; }
+  .empty { color: var(--muted); font-style: italic; }
+
+  .try { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .try label { display: block; font-size: 14px; color: var(--muted); margin: 0 0 6px; }
+  .try textarea, .try input, .try select { width: 100%; font: inherit; color: var(--fg); background: var(--bg);
+       border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .try textarea { min-height: 300px; resize: vertical; }
+  .row { margin-bottom: 14px; }
+  .go { background: var(--fg); color: var(--bg); border: 0; border-radius: 8px; padding: 10px 18px;
+        font: inherit; font-weight: 600; cursor: pointer; }
+  .go[disabled] { opacity: .5; cursor: default; }
+  .out { border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-height: 300px; white-space: pre-wrap; }
+  .status { font-size: 14px; color: var(--muted); margin-top: 10px; }
+  .warn { color: var(--warn); }
+  code { font-family: var(--mono); font-size: 13px; background: var(--code); padding: 1px 5px; border-radius: 4px; }
+
+  @media (max-width: 860px) {
+    .layout, .try { grid-template-columns: 1fr; }
+    .tasklist { position: static; }
+    .ans { grid-template-columns: 1fr; gap: 6px; }
+    .models { display: block; overflow-x: auto; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Тернарные модели на обычном процессоре</h1>
+  <p class="sub" id="machine">Одни и те же задачи для наших тернарных моделей и для моделей для сравнения. Ответы получены
+    без видеокарты, жадным выбором слов (без случайности), поэтому их можно воспроизвести.</p>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="results">Результаты</button>
+    <button role="tab" aria-selected="false" data-tab="try">Попробовать самому</button>
+  </nav>
+
+  <section id="tab-results">
+    <table class="models" id="models"></table>
+    <p class="sub" style="font-size:13px;margin-top:-16px">* Пиковая память процесса с контекстом на 16 тыс. токенов; у переупакованных моделей сюда входит и копия весов в новом порядке, и страницы исходного файла. Скорость чтения запроса — среднее по задачам пересказа.</p>
+    <div class="layout">
+      <aside class="tasklist" id="tasklist" aria-label="Задачи"></aside>
+      <main class="task" id="task"></main>
+    </div>
+  </section>
+
+  <section id="tab-try" hidden>
+    <p class="sub" id="tryhint">Работает, когда страница открыта через локальный сервер:
+      <code>bash ternary/demo/start.sh</code>, затем <code>http://127.0.0.1:8090</code>.
+      Модель выбирается ниже; при смене она загружается за несколько секунд (в памяти держится одна).</p>
+    <div class="try">
+      <div>
+        <div class="row">
+          <label for="model">Модель</label>
+          <select id="model"></select>
+          <div class="status" id="modelnote"></div>
+        </div>
+        <div class="row">
+          <label for="preset">Задача</label>
+          <select id="preset"></select>
+        </div>
+        <div class="row">
+          <label for="instr">Задание</label>
+          <input id="instr">
+        </div>
+        <div class="row">
+          <label for="src">Текст</label>
+          <textarea id="src" placeholder="Вставьте сюда текст"></textarea>
+        </div>
+        <div class="row">
+          <label><input type="checkbox" id="textmode" style="width:auto"> режим «продолжи текст» (для нашей 4B без диалогов)</label>
+        </div>
+        <button class="go" id="go">Запустить</button>
+      </div>
+      <div>
+        <label>Ответ модели</label>
+        <div class="out" id="out" aria-live="polite"></div>
+        <div class="status" id="status"></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="results.js"></script>
+<script>
+const R = window.RESULTS || { tasks: [], models: {}, results: {} };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const fmt = (n) => n == null ? "—" : Number(n).toLocaleString("ru-RU");
+
+if (R.machine) $("machine").textContent = R.machine + ". " + $("machine").textContent;
+
+// --- tabs
+document.querySelectorAll("nav.tabs button").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll("nav.tabs button").forEach((x) => x.setAttribute("aria-selected", x === b));
+  $("tab-results").hidden = b.dataset.tab !== "results";
+  $("tab-try").hidden = b.dataset.tab !== "try";
+}));
+
+// --- model table: size, memory, average speeds over the tasks that were run
+const mids = Object.keys(R.models).filter((m) => R.results[m]);
+function avg(mid, key, filter) {
+  const v = Object.entries(R.results[mid] || {}).filter(([t]) => !filter || filter(t)).map(([, r]) => r[key]).filter((x) => x);
+  return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null;
+}
+$("models").innerHTML = "<tr><th>Модель</th><th>Файл</th><th title='пиковый RSS процесса: веса, кэш контекста 16 тыс. токенов и страницы файла модели'>Память*</th><th>Чтение запроса</th><th>Генерация</th></tr>" +
+  mids.map((m) => {
+    const M = R.models[m];
+    return `<tr><td>${esc(M.name)}${M.ours ? '<span class="tag">наша</span>' : ""}<br><small style="color:var(--muted)">${esc(M.note)}</small></td>
+      <td class="num">${fmt(M.size_mb)} МБ</td><td class="num">${M.ram_mb ? fmt(M.ram_mb) + " МБ" : "—"}</td>
+      <td class="num">${fmt(avg(m, "prompt_tps", (t) => t.startsWith("sum_")))} ток/с</td>
+      <td class="num">${fmt(avg(m, "gen_tps"))} ток/с</td></tr>`;
+  }).join("");
+
+// --- task list and answers
+let current = R.tasks[0]?.id;
+function renderList() {
+  let html = "", group = null;
+  for (const t of R.tasks) {
+    if (t.group !== group) { group = t.group; html += `<h3>${esc(group)}</h3>`; }
+    html += `<button data-id="${t.id}" aria-current="${t.id === current}">${esc(t.title)}</button>`;
+  }
+  $("tasklist").innerHTML = html;
+  $("tasklist").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { current = b.dataset.id; renderList(); renderTask(); }));
+}
+function renderTask() {
+  const t = R.tasks.find((x) => x.id === current);
+  if (!t) { $("task").innerHTML = '<p class="empty">Результатов пока нет: запустите run_demo.py.</p>'; return; }
+  const src = t.text ? `<details class="source"><summary>Исходный текст, ${fmt(t.text.length)} символов</summary><pre>${esc(t.text)}</pre></details>` : "";
+  const answers = mids.map((m) => {
+    const r = R.results[m][t.id], M = R.models[m];
+    const stats = r ? `запрос ${fmt(r.prompt_tokens)} ток., ответ ${fmt(r.gen_tokens)} ток.<br>
+        чтение ${fmt(r.prompt_tps)} ток/с, генерация ${fmt(r.gen_tps)} ток/с<br>всего ${String(r.seconds).replace(".", ",")} с` : "";
+    return `<div class="ans${M.ours ? " ours" : ""}"><div><div class="who">${esc(M.name)}<small>${esc(M.note)}</small></div>
+      <div class="stats">${stats}</div></div>
+      <div class="text">${r ? (esc(r.answer) || '<span class="empty">пустой ответ</span>') : '<span class="empty">не запускали</span>'}</div></div>`;
+  }).join("");
+  $("task").innerHTML = `<h2>${esc(t.title)}</h2><p class="instr">${esc(t.instruction)}</p>${src}<div class="answers">${answers}</div>`;
+}
+renderList(); renderTask();
+
+// --- live mode (needs llama-server serving this folder)
+const CHAT = (q) => `<|im_start|>user\n${q}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n`;
+$("preset").innerHTML = R.tasks.map((t) => `<option value="${t.id}">${esc(t.group)}: ${esc(t.title)}</option>`).join("");
+function loadPreset() {
+  const t = R.tasks.find((x) => x.id === $("preset").value);
+  if (t) { $("instr").value = t.instruction; $("src").value = t.text || ""; }
+}
+$("preset").addEventListener("change", loadPreset); loadPreset();
+
+const live = location.protocol.startsWith("http");
+const NOTES = {
+  tern4b: "Учили только на текстах, без диалогов: задания не выполняет, только продолжает текст. Включён режим «продолжи текст».",
+  tern08: "Маленькая (0.8B): формат ассистента держит, но с задачами справляется плохо.",
+};
+function onModel() {
+  const id = $("model").value, n = NOTES[id] || "";
+  $("modelnote").textContent = n; $("modelnote").classList.toggle("warn", !!n);
+  $("textmode").checked = id === "tern4b";
+}
+$("model").addEventListener("change", onModel);
+if (!live) { $("go").disabled = true; $("tryhint").classList.add("warn"); }
+else fetch("/models").then((r) => r.json()).then((j) => {
+  const order = ["bonsai2b_tq", "tern4b", "tern08", "bonsai2b", "qwen2b"];
+  const ids = j.data.map((m) => m.id).sort((a, b) => (order.indexOf(a) + 99) % 99 - (order.indexOf(b) + 99) % 99);
+  $("model").innerHTML = ids.map((id) => `<option value="${id}">${esc((R.models[id] || {}).name || id)}</option>`).join("");
+  onModel();
+}).catch(() => { $("model").innerHTML = '<option value="">модель сервера</option>'; });
+
+$("go").addEventListener("click", async () => {
+  const instr = $("instr").value.trim(), text = $("src").value.trim();
+  const prompt = $("textmode").checked
+    ? (text ? `Текст:\n${text}\n\n` : "") + `Задание: ${instr}\n\nОтвет:\n`
+    : CHAT(instr + (text ? `\n\nТекст:\n${text}` : ""));
+  $("go").disabled = true; $("out").textContent = ""; $("status").classList.remove("warn"); $("status").textContent = "загружаю модель и читаю запрос…";
+  const t0 = performance.now();
+  try {
+    const resp = await fetch("/completion", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: $("model").value || undefined, prompt, n_predict: 500, temperature: 0, repeat_penalty: 1.1, stream: true,
+                             stop: ["<|im_end|>", "<|endoftext|>", "\nЗадание:", "\nТекст:"] }) });
+    const reader = resp.body.getReader(), dec = new TextDecoder();
+    let buf = "", first = null;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 2);
+        if (!line.startsWith("data:")) continue;
+        const j = JSON.parse(line.slice(5));
+        if (j.content) { if (first == null) first = performance.now(); $("out").textContent += j.content; }
+        if (j.timings) {
+          const tm = j.timings;
+          $("status").textContent = `запрос ${fmt(tm.prompt_n)} ток. · чтение ${fmt(Math.round(tm.prompt_per_second))} ток/с · ` +
+            `генерация ${fmt(Math.round(tm.predicted_per_second))} ток/с · всего ${((performance.now() - t0) / 1000).toFixed(1).replace(".", ",")} с`;
+        } else if (first != null) {
+          $("status").textContent = "пишу ответ…";
+        }
+      }
+    }
+  } catch (e) {
+    $("status").textContent = "Ошибка: " + e.message; $("status").classList.add("warn");
+  }
+  $("go").disabled = false;
+});
+</script>
+</body>
+</html>
