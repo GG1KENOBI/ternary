@@ -1,0 +1,73 @@
+# llama.cpp с нашей переупаковкой TQ2_0 (cpu/tq2_0_repack.patch):
+#  - windows: сборка программ под Windows x64 (AVX2) — для замеров на обычных ПК с Intel/AMD;
+#  - linux: проверка на x86-машине GitHub — совпадение перплексии с переупаковкой и без, скорость.
+name: cpu-kernels
+on:
+  workflow_dispatch:
+  push:
+    paths: ['cpu/tq2_0_repack.patch', '.github/workflows/cpu.yml']
+
+env:
+  LLAMA_SHA: a7af149a2a7768d4b1f6f02c6ce26a17fba11376
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: llama.cpp + патч
+        shell: bash
+        run: |
+          git init -q llama.cpp && cd llama.cpp
+          git remote add origin https://github.com/ggml-org/llama.cpp
+          git fetch -q --depth 1 origin $LLAMA_SHA && git checkout -q FETCH_HEAD
+          git apply ../cpu/tq2_0_repack.patch
+      - name: сборка
+        shell: bash
+        run: |
+          cd llama.cpp
+          cmake -B build -G "Visual Studio 17 2022" -A x64 -T ClangCL \
+            -DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON \
+            -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build build --config Release -j 4 --target llama-bench llama-perplexity llama-server llama-completion
+          ls build/bin/Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: llama-ted-windows-x64-avx2
+          path: llama.cpp/build/bin/Release/*.exe
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: llama.cpp + патч
+        run: |
+          git init -q llama.cpp && cd llama.cpp
+          git remote add origin https://github.com/ggml-org/llama.cpp
+          git fetch -q --depth 1 origin $LLAMA_SHA && git checkout -q FETCH_HEAD
+          git apply ../cpu/tq2_0_repack.patch
+      - name: сборка
+        run: |
+          cd llama.cpp
+          cmake -B build -DGGML_NATIVE=ON -DLLAMA_CURL=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j $(nproc) --target llama-bench llama-perplexity
+      - name: модель
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download models-v1 -p e2-TQ2_0.gguf -p val_ru.txt -D m
+      - name: проверка и замер
+        run: |
+          B=llama.cpp/build/bin; T=$(nproc)
+          {
+            echo "### $(lscpu | grep 'Model name' | sed 's/ \+/ /g'), потоков $T"
+            echo "флаги: $(grep -o -w -E 'avx2|avx512f|avx512_vnni|avx_vnni|f16c|fma' /proc/cpuinfo | sort -u | tr '\n' ' ')"
+            echo '```'
+            for r in on off; do
+              F=$([ $r = off ] && echo -nr)
+              echo "перплексия, переупаковка $r: $($B/llama-perplexity -m m/e2-TQ2_0.gguf -f m/val_ru.txt -c 512 --chunks 8 -t $T $F 2>&1 | grep -oE 'PPL = [0-9.]+')"
+            done
+            for r in 1 0; do
+              echo "скорость, переупаковка $r:"; $B/llama-bench -m m/e2-TQ2_0.gguf -t $T -p 512 -n 128 -r 3 --repack $r 2>&1 | grep -E 'pp512|tg128'
+            done
+            echo '```'
+          } | tee -a $GITHUB_STEP_SUMMARY
