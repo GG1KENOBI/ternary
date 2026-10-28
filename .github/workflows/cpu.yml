@@ -63,7 +63,7 @@ jobs:
             echo "флаги: $(grep -o -w -E 'avx2|avx512f|avx512_vnni|avx_vnni|f16c|fma' /proc/cpuinfo | sort -u | tr '\n' ' ')"
             echo '```'
             for r in on off; do
-              F=$([ $r = off ] && echo -nr)
+              F=""; if [ $r = off ]; then F=-nr; fi
               echo "перплексия, переупаковка $r: $($B/llama-perplexity -m m/e2-TQ2_0.gguf -f m/val_ru.txt -c 512 --chunks 8 -t $T $F 2>&1 | grep -oE 'PPL = [0-9.]+')"
             done
             for r in 1 0; do
