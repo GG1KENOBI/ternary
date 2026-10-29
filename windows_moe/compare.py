@@ -25,6 +25,12 @@ HERE = Path(__file__).resolve().parent
 GIB = 2**30
 
 
+def configure_output():
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def save_json(path, data):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -428,8 +434,7 @@ def execute(args, manifest, selected, tasks):
 
 
 if __name__ == "__main__":
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    configure_output()
     try:
         raise SystemExit(main())
     except RuntimeError as error:

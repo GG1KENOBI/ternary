@@ -18,6 +18,7 @@ KIT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("compare", KIT / "compare.py")
 compare = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(compare)
+compare.configure_output()
 
 
 @contextlib.contextmanager
