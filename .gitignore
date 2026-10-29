@@ -9,3 +9,8 @@
 __pycache__/
 release/.venv-blackwell/
 release/blackwell-results/
+windows_moe/_runtime/
+windows_moe/_downloads/
+windows_moe/_models/
+windows_moe/_run.lock
+windows_moe/results/

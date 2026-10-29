@@ -1,0 +1,31 @@
+name: windows-moe-tests
+on:
+  workflow_dispatch:
+  push:
+    paths: ['windows_moe/**', 'demo/tasks.json', 'demo/texts/**', '.github/workflows/windows-moe.yml']
+jobs:
+  tests:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit and local HTTP integration tests (no models or GPU)
+        run: python -m unittest discover -s windows_moe/tests -v
+      - name: Plan only (no network)
+        run: python windows_moe/compare.py --plan --models giga --tasks sum_short
+      - name: Official Windows CUDA binaries load (no GPU or model required)
+        timeout-minutes: 5
+        env:
+          CUDA_VISIBLE_DEVICES: '-1'
+        run: |
+          @'
+          import json, sys
+          sys.path.insert(0, 'windows_moe')
+          import compare
+          manifest = json.loads((compare.HERE / 'models.json').read_text(encoding='utf-8'))
+          server = compare.setup_runtime(manifest)
+          print(compare.run_text([str(server), '--version']))
+          '@ | python

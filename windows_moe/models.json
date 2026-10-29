@@ -1,0 +1,58 @@
+{
+  "verified_at": "2026-10-29",
+  "runtime": {
+    "release": "b11960",
+    "cuda": "13.4",
+    "minimum_driver_major": 580,
+    "source": "https://github.com/ggml-org/llama.cpp/releases/tag/b11960",
+    "assets": [
+      {
+        "name": "cudart-llama-bin-win-cuda-13.4-x64.zip",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/cudart-llama-bin-win-cuda-13.4-x64.zip",
+        "size": 423535356,
+        "sha256": "738f8c251ac22b70c3ae6f83a10cf222725df0395246a2cf58f32bdb85fbe668"
+      },
+      {
+        "name": "llama-b11960-bin-win-cuda-13.4-x64.zip",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-cuda-13.4-x64.zip",
+        "size": 164986387,
+        "sha256": "31c75ea62b80f0816c855ea783ef68757bc2d48028edaa57d904e4982bddea4a"
+      }
+    ]
+  },
+  "models": [
+    {
+      "id": "qwen",
+      "name": "Qwen3.6-35B-A3B",
+      "repo": "unsloth/Qwen3.6-35B-A3B-GGUF",
+      "revision": "a483e9e6cbd595906af30beda3187c2663a1118c",
+      "file": "Qwen3.6-35B-A3B-Q8_0.gguf",
+      "size": 36903140320,
+      "sha256": "d1a395809f65a43a13ad119eb4e7acdef1ac6d68120f39902c8ab96e72794a59",
+      "license": "apache-2.0",
+      "source": "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF"
+    },
+    {
+      "id": "gemma",
+      "name": "Gemma 4 26B-A4B-it",
+      "repo": "unsloth/gemma-4-26B-A4B-it-GGUF",
+      "revision": "c099eb48e663fd284577b04978a94ffccb261841",
+      "file": "gemma-4-26B-A4B-it-Q8_0.gguf",
+      "size": 26859861728,
+      "sha256": "5f7cbd0f4564e84342fc34321a09acb54b1a3da9215124e5bf444baa6dda152c",
+      "license": "apache-2.0",
+      "source": "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF"
+    },
+    {
+      "id": "giga",
+      "name": "GigaChat 3.1 Lightning",
+      "repo": "ai-sage/GigaChat3.1-10B-A1.8B-GGUF",
+      "revision": "97045b260251cfa86f5ad25638fa2dd074153446",
+      "file": "GigaChat3.1-10B-A1.8B-q8_0.gguf",
+      "size": 11353174144,
+      "sha256": "4ffe95f1ffd0cb294100a475a8881b7b757945bd28d989e8aa4187966747d6e7",
+      "license": "mit",
+      "source": "https://huggingface.co/ai-sage/GigaChat3.1-10B-A1.8B-GGUF"
+    }
+  ]
+}
