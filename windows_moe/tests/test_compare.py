@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import tempfile
 import threading
@@ -199,10 +200,10 @@ class Tests(unittest.TestCase):
                 self.assertIn("<session-key>", row["command"])
 
     def test_real_local_http_auth_and_unicode(self):
+        captured = []
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
-                self.server.captured = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                self.server.auth = self.headers["Authorization"]
+                captured.append((self.headers["Authorization"], json.loads(self.rfile.read(int(self.headers["Content-Length"])))))
                 self.send_response(200)
                 self.end_headers()
                 self.wfile.write(json.dumps({"answer": "Москва"}).encode())
@@ -211,6 +212,15 @@ class Tests(unittest.TestCase):
         with http_fixture(Handler) as port:
             result = compare.request_json(port, "session-key", "/chat", {"text": "Привет"})
             self.assertEqual(result["answer"], "Москва")
+            self.assertEqual(captured, [("Bearer session-key", {"text": "Привет"})])
+
+    @unittest.skipUnless(os.name == "nt", "BAT launcher is tested on Windows CI")
+    def test_windows_bat_launcher_and_exit_code(self):
+        for arguments, expected in (("--plan --models giga --tasks sum_short", 0), ("--unknown-option", 2)):
+            result = subprocess.run(["cmd.exe", "/c", "run.bat " + arguments], cwd=KIT,
+                                    input="\n", capture_output=True, text=True, encoding="utf-8",
+                                    errors="replace", timeout=30)
+            self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
