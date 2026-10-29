@@ -103,6 +103,17 @@ class Tests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 compare.assert_offloaded(log)
 
+    def test_default_quiet_log_does_not_masquerade_as_cpu_offload(self):
+        args = argparse.Namespace(context=32768, threads=8)
+        command = compare.server_command("server.exe", "model.gguf", args, 1234, "key")
+        self.assertEqual(command[command.index("--log-verbosity") + 1], "4")
+        self.assertEqual(command[command.index("--log-colors") + 1], "off")
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "server.log"
+            log.write_text("verbosity = 3\nmodel loaded\nlistening on localhost\n", encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                compare.wait_offloaded(log, timeout=0)
+
     def test_gpu_index_maps_to_physical_uuid_and_driver_is_checked(self):
         text = '0, Display GPU, 8000, 6000, 582.10, GPU-screen\n1, RTX PRO 6000, 97887, 97000, 582.10, GPU-test\n'
         with patch.object(compare, "run_text", return_value=text):
@@ -189,16 +200,36 @@ class Tests(unittest.TestCase):
                      patch.object(compare, "MemorySampler") as sampler, \
                      patch.object(compare, "request_json", side_effect=request):
                     sampler.return_value.peak, sampler.return_value.samples = 1200, 3
-                    compare.compare_model(root / "server.exe", model,
-                        [{"id": "short", "instruction": "Ответь", "text": "", "max_tokens": 50}],
-                        args, root / "logs", state, root / "results.json")
-                self.assertFalse(weights.exists())
+                    task_list = [{"id": "short", "instruction": "Ответь", "text": "", "max_tokens": 50}]
+                    if fail:
+                        with self.assertRaises(RuntimeError):
+                            compare.compare_model(root / "server.exe", model, task_list, args,
+                                                  root / "logs", state, root / "results.json")
+                    else:
+                        compare.compare_model(root / "server.exe", model, task_list, args,
+                                              root / "logs", state, root / "results.json")
+                self.assertEqual(weights.exists(), fail)
                 self.assertTrue(unrelated.exists())
                 process.terminate.assert_called_once()
                 row = json.loads((root / "results.json").read_text())["results"]["test"]
                 self.assertEqual(row["status"], "error" if fail else "complete")
-                self.assertTrue(row["weights_deleted"])
+                self.assertEqual(row["weights_deleted"], not fail)
                 self.assertIn("<session-key>", row["command"])
+
+    def test_failed_first_model_stops_before_second_download(self):
+        args = argparse.Namespace(gpu=1, server=None, check=False, keep_models=False,
+                                  context=32768, threads=8, timeout=3)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(compare, "HERE", Path(tmp)), \
+             patch.object(compare, "inspect_gpu", return_value={"selected": {"uuid": "GPU-test", "free_mib": 1e8}}), \
+             patch.object(compare, "setup_runtime", return_value=Path("server.exe")), \
+             patch.object(compare, "run_text", return_value="CUDA0"), \
+             patch.object(compare, "compare_model", side_effect=RuntimeError("missing offload log")) as model_run:
+            code = compare.execute(args, {"runtime": {"minimum_driver_major": 580}},
+                                   [{"id": "first", "name": "first", "size": 1},
+                                    {"id": "second", "name": "second", "size": 1}], [])
+            self.assertEqual(code, 1)
+            self.assertEqual(model_run.call_count, 1)
+            self.assertEqual(len(list((Path(tmp) / "results").glob("*.zip"))), 1)
 
     def test_real_local_http_auth_and_unicode(self):
         captured = []

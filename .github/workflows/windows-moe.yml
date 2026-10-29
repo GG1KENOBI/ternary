@@ -31,3 +31,8 @@ jobs:
           server = compare.setup_runtime(manifest)
           print(compare.run_text([str(server), '--version']))
           '@ | python
+      - name: Real server log levels and chat endpoint (260K model, CPU only)
+        timeout-minutes: 5
+        env:
+          CUDA_VISIBLE_DEVICES: '-1'
+        run: python windows_moe/tests/smoke_runtime.py

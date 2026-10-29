@@ -23,6 +23,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 GIB = 2**30
+KIT_VERSION = "2026-10-30.2"
 
 
 def configure_output():
@@ -52,6 +53,7 @@ def download(url, target, size, digest, attempts=3):
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
+        print(f"  Проверяю сохранённый файл: {target.name}", flush=True)
         if target.stat().st_size == size and sha256(target) == digest:
             return target
         raise RuntimeError(f"Неверный существующий файл: {target}. Не перезаписываю его.")
@@ -259,6 +261,26 @@ def assert_offloaded(log):
     matches = re.findall(r"offloaded\s+(\d+)\s*/\s*(\d+)\s+layers to GPU", log)
     if not matches or not all(int(a) == int(b) and int(a) > 0 for a, b in matches):
         raise RuntimeError("Не подтверждено полное размещение слоёв на GPU. CPU-замер не засчитывается; см. server.log")
+    return {"offloaded_layers": int(matches[-1][0]), "total_layers": int(matches[-1][1])}
+
+
+def server_command(server, weights, args, port, key):
+    # В b11960 библиотечные INFO (включая offloaded N/N) скрыты при обычном уровне 3.
+    return [str(server), "-m", str(weights), "--alias", "candidate", "--host", "127.0.0.1",
+            "--port", str(port), "--api-key", key, "--device", "CUDA0", "--split-mode", "none",
+            "-ngl", "999", "-c", str(args.context), "-np", "1", "-b", "512", "-ub", "128",
+            "-t", str(args.threads), "--jinja", "--reasoning", "off", "--reasoning-budget", "0",
+            "--no-context-shift", "--no-webui", "--log-verbosity", "4", "--log-colors", "off"]
+
+
+def wait_offloaded(log_path, timeout=3):
+    # common_log пишет из фонового потока; /health может ответить до завершения записи.
+    deadline = time.monotonic() + timeout
+    while True:
+        log = log_path.read_text(encoding="utf-8", errors="replace")
+        if re.search(r"offloaded\s+\d+\s*/\s*\d+\s+layers", log) or time.monotonic() >= deadline:
+            return assert_offloaded(log)
+        time.sleep(0.1)
 
 
 def model_path(model):
@@ -288,11 +310,7 @@ def compare_model(server, model, tasks, args, folder, state, report_path):
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     key = secrets.token_urlsafe(24)
-    command = [str(server), "-m", str(weights), "--alias", "candidate", "--host", "127.0.0.1",
-               "--port", str(port), "--api-key", key, "--device", "CUDA0", "--split-mode", "none",
-               "-ngl", "999", "-c", str(args.context), "-np", "1", "-b", "512", "-ub", "128",
-               "-t", str(args.threads), "--jinja", "--reasoning", "off", "--reasoning-budget", "0",
-               "--no-context-shift", "--no-webui"]
+    command = server_command(server, weights, args, port, key)
     record["command"] = ["<session-key>" if x == key else x for x in command]
     record["status"] = "loading"
     sampler.thread.start()
@@ -300,7 +318,7 @@ def compare_model(server, model, tasks, args, folder, state, report_path):
         with log_path.open("w", encoding="utf-8") as log:
             proc = subprocess.Popen(command, env=env, stdout=log, stderr=subprocess.STDOUT)
             wait_ready(proc, port, key)
-            assert_offloaded(log_path.read_text(encoding="utf-8", errors="replace"))
+            record["gpu_offload"] = wait_offloaded(log_path)
             # GGUF содержит шаблон именно этой модели: Qwen-шаблон не навязывается Gemma/GigaChat.
             record["server_properties"] = request_json(port, key, "/props")
             record["status"] = "running"
@@ -326,16 +344,22 @@ def compare_model(server, model, tasks, args, folder, state, report_path):
     except Exception as exc:
         record.update(status="error", error=str(exc))
         print(f"  ОШИБКА {model['id']}: {exc}", flush=True)
+        # Системный сбой не должен запускать ещё два больших скачивания.
+        raise
+    except KeyboardInterrupt:
+        record.update(status="interrupted", error="Остановлено пользователем")
+        raise
     finally:
         # Нельзя удалять модель и запускать следующую, пока наш процесс не остановился.
         stop_process(proc)
         sampler.stop()
         record.update(max_sampled_gpu_used_mib=sampler.peak, memory_samples=sampler.samples)
-        if not args.keep_models:
+        if not args.keep_models and record["status"] in ("complete", "needs_review"):
             weights.unlink(missing_ok=True)
             record["weights_deleted"] = True
         else:
             record["weights_deleted"] = False
+            record["weights_retained_reason"] = "--keep-models" if args.keep_models else "Ошибка или прерывание: оставлены для повторной попытки"
         save_json(report_path, state)
 
 
@@ -377,7 +401,7 @@ def main(argv=None):
     selected = [next(m for m in manifest["models"] if m["id"] == mid) for mid in dict.fromkeys(args.models)]
     tasks = load_tasks(args.tasks)
     if args.plan:
-        print(json.dumps({"gpu": args.gpu, "models": selected, "tasks": [t["id"] for t in tasks],
+        print(json.dumps({"kit_version": KIT_VERSION, "gpu": args.gpu, "models": selected, "tasks": [t["id"] for t in tasks],
                           "runtime": manifest["runtime"], "context": args.context}, ensure_ascii=False, indent=2))
         return 0
     if os.name != "nt":
@@ -391,7 +415,7 @@ def main(argv=None):
 def execute(args, manifest, selected, tasks):
     folder = HERE / "results" / (datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3))
     folder.mkdir(parents=True)
-    state = {"started": datetime.now().astimezone().isoformat(), "platform": platform.platform(),
+    state = {"kit_version": KIT_VERSION, "started": datetime.now().astimezone().isoformat(), "platform": platform.platform(),
              "python": sys.version, "settings": {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
              "manifest": manifest, "tasks": tasks, "results": {}}
     report_path = folder / "results.json"
