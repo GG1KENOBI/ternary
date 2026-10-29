@@ -7,3 +7,5 @@
 *.npy
 *.safetensors
 __pycache__/
+release/.venv-blackwell/
+release/blackwell-results/
